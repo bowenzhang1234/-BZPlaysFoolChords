@@ -1,0 +1,12 @@
+{
+  "id": "BZPlaysFoolChords",
+  "name": "BZ Plays Fool Chords",
+  "author": "bowenzhang1234",
+  "description": "Plays a real musical chord when the Fool's Wah, Cho, or Ki melody voice plays. Successive plays cycle C, G, Am, and F.",
+  "version": "0.1.0",
+  "min_game_version": "0.113.0",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": false
+}

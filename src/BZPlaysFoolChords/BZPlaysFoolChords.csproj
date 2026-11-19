@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>BZPlaysFoolChords</AssemblyName>
+    <RootNamespace>BZPlaysFoolChords</RootNamespace>
+    <Version>0.1.0</Version>
+    <Deterministic>true</Deterministic>
+    <Sts2DataDir Condition="'$(Sts2DataDir)' == '' and Exists('C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll')">C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64</Sts2DataDir>
+    <UseGameAssemblies Condition="'$(Sts2DataDir)' != '' and Exists('$(Sts2DataDir)\sts2.dll') and Exists('$(Sts2DataDir)\0Harmony.dll')">true</UseGameAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="BZPlaysFoolChords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="chords.cfg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="audio\*.wav" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseGameAssemblies)' == 'true'">
+    <Reference Include="sts2">
+      <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseGameAssemblies)' != 'true'">
+    <ProjectReference Include="..\Sts2Refs\Sts2Refs.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <PackageReference Include="Lib.Harmony" Version="2.3.6">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <Target Name="StageMod" AfterTargets="Build">
+    <PropertyGroup>
+      <StageDir>$(MSBuildThisFileDirectory)..\..\dist\BZPlaysFoolChords\</StageDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <StageAudio Include="$(MSBuildThisFileDirectory)audio\*.wav" />
+    </ItemGroup>
+    <RemoveDir Directories="$(StageDir)" />
+    <MakeDir Directories="$(StageDir)audio" />
+    <Copy SourceFiles="$(TargetPath);$(MSBuildThisFileDirectory)BZPlaysFoolChords.json;$(MSBuildThisFileDirectory)chords.cfg" DestinationFolder="$(StageDir)" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(StageDir)" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+    <Copy SourceFiles="@(StageAudio)" DestinationFolder="$(StageDir)audio" />
+    <Message Importance="high" Text="Staged $(AssemblyName) at $(StageDir)" />
+  </Target>
+</Project>
