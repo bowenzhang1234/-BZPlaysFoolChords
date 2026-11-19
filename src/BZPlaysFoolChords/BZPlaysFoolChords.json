@@ -2,7 +2,7 @@
   "id": "BZPlaysFoolChords",
   "name": "BZ Plays Fool Chords",
   "author": "bowenzhang1234",
-  "description": "Plays a real chord, or a short drum groove, when the Fool's Wah, Cho, or Ki melody voice plays. Choose piano, acoustic guitar, electric guitar, jazz piano, or drums in chords.cfg.",
+  "description": "Plays a chord or drum groove when the Fool sings Wah, Cho, or Ki. Choose piano, guitar, jazz, drums, or your own wav pack in chords.cfg.",
   "version": "0.1.0",
   "min_game_version": "0.113.0",
   "has_pck": false,

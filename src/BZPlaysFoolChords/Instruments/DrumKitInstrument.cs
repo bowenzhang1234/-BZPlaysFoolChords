@@ -8,9 +8,9 @@ public sealed class DrumKitInstrument : IInstrument
 
     public static readonly string[] Patterns = ["backbeat", "push", "hats", "fill"];
 
-    public InstrumentClip ClipFor(ChordStep step, int stepIndex)
+    public InstrumentClip? ClipFor(InstrumentRequest request)
     {
-        var pattern = Math.Abs(stepIndex) % Patterns.Length;
+        var pattern = Math.Abs(request.StepIndex) % Patterns.Length;
         var name = Patterns[pattern];
         return new InstrumentClip
         {

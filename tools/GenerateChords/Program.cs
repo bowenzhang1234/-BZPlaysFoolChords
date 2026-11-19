@@ -12,9 +12,12 @@ foreach (var instrument in InstrumentCatalog.Create().All)
     var count = instrument is DrumKitInstrument ? DrumKitInstrument.Patterns.Length : steps.Count;
     for (var index = 0; index < count; index++)
     {
-        var clip = instrument.ClipFor(steps[Math.Min(index, steps.Count - 1)], index);
-        var path = Path.Combine(folder, clip.WavFile ?? clip.Label + ".wav");
-        var wav = ChordSynth.EncodeWav(clip.Synthesize());
+        var clip = instrument.ClipFor(new InstrumentRequest(steps[Math.Min(index, steps.Count - 1)], index, null));
+        if (clip?.Synthesize is not Func<short[]> synthesize || string.IsNullOrEmpty(clip.WavFile))
+            continue;
+
+        var path = Path.Combine(folder, clip.WavFile);
+        var wav = ChordSynth.EncodeWav(synthesize());
         File.WriteAllBytes(path, wav);
         Console.WriteLine($"{path} ({wav.Length} bytes)");
     }

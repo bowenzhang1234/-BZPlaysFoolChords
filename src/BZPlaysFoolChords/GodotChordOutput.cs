@@ -92,7 +92,8 @@ sealed class GodotChordOutput
                 stream = GodotRef.LoadWav(path);
         }
 
-        stream ??= GodotRef.FromPcm(clip.Synthesize());
+        if (stream == null && clip.Synthesize != null)
+            stream = GodotRef.FromPcm(clip.Synthesize());
         if (stream != null)
             _streams[clip.CacheKey] = stream;
 

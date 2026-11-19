@@ -14,8 +14,9 @@ public sealed class JazzRhodesInstrument : IInstrument
         ["F"] = ["A3", "C4", "E4", "G4"],
     };
 
-    public InstrumentClip ClipFor(ChordStep step, int stepIndex)
+    public InstrumentClip? ClipFor(InstrumentRequest request)
     {
+        var step = request.Step;
         var notes = step.CustomNotes ? PitchedClip.Notes(step) : Voicing(step.Label);
         return PitchedClip.Create(this, step, notes, () => Render(notes));
     }

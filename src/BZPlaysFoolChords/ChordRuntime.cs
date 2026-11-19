@@ -97,7 +97,10 @@ sealed class ChordSession
                 return false;
             case PlayAction.PlayChord:
                 var step = _settings.Steps[decision.ChordIndex];
-                var clip = _instrument.ClipFor(step, decision.ChordIndex);
+                var clip = _instrument.ClipFor(new InstrumentRequest(step, decision.ChordIndex, cardId));
+                if (clip == null)
+                    return true;
+
                 var played = _output.TryPlay(clip, callVolume);
                 if (!played)
                 {
@@ -144,6 +147,8 @@ static class ChordRuntime
         var instrument = InstrumentCatalog.Create().Resolve(settings.Instrument, out var instrumentWarning);
         if (instrumentWarning != null)
             GameLog.Warn(instrumentWarning);
+        foreach (var warning in instrument.StartupWarnings)
+            GameLog.Warn(warning);
 
         Session = new ChordSession(settings, Path.Combine(directory, "audio"), instrument);
         var (master, sfx) = ReadSliders();

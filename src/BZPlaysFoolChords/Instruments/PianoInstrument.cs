@@ -6,10 +6,10 @@ public sealed class PianoInstrument : IInstrument
     public string DisplayName => "Piano";
     public IEnumerable<string> Aliases => [];
 
-    public InstrumentClip ClipFor(ChordStep step, int stepIndex)
+    public InstrumentClip? ClipFor(InstrumentRequest request)
     {
-        var notes = PitchedClip.Notes(step);
-        return PitchedClip.Create(this, step, notes, () => Render(notes));
+        var notes = PitchedClip.Notes(request.Step);
+        return PitchedClip.Create(this, request.Step, notes, () => Render(notes));
     }
 
     public static short[] Render(IReadOnlyList<string> notes)

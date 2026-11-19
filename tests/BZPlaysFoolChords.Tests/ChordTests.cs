@@ -131,7 +131,7 @@ public class InstrumentTests
     public void BuiltInVoicesResolveByNameAndANewVoiceNeedsOnlyRegistration()
     {
         var registry = InstrumentCatalog.Create();
-        Assert.Equal(["piano", "acoustic", "electric", "jazz", "drums"], registry.All.Select(voice => voice.Id).ToArray());
+        Assert.Equal(["piano", "acoustic", "electric", "jazz", "drums", "custom"], registry.All.Select(voice => voice.Id).ToArray());
 
         Assert.Equal("electric", registry.Resolve("Electric Guitar", out var warning).Id);
         Assert.Null(warning);
@@ -142,11 +142,33 @@ public class InstrumentTests
         withBell.Register(new PianoInstrument());
         withBell.Register(new BellInstrument());
         var step = ChordSettings.DefaultSteps()[0];
-        var clip = withBell.Resolve("bell", out _).ClipFor(step, 0);
+        var clip = withBell.Resolve("bell", out _).ClipFor(new InstrumentRequest(step, 0, null));
 
+        Assert.NotNull(clip);
         Assert.Equal("bell", clip.InstrumentId);
         Assert.Equal("piano", withBell.Resolve("bagpipes", out var fallback).Id);
         Assert.Contains("bagpipes", fallback);
+    }
+
+    [Fact]
+    public void CustomPackMapsCardsAndLeavesMissingClipsAlone()
+    {
+        var pack = CustomPack.Parse("""
+            files = a.wav | b.wav
+            card.WAH_CHO_KI = big.wav
+            card.Wah Hammer = hit1.wav | hit2.wav
+            card.bad = ../nope.wav
+            """);
+        Assert.Contains(pack.Warnings, warning => warning.Contains("nope", StringComparison.Ordinal));
+
+        var voice = new CustomPackInstrument(pack);
+        var step = ChordSettings.DefaultSteps()[0];
+        Assert.Equal("big.wav", voice.ClipFor(new InstrumentRequest(step, 0, "WAH_CHO_KI"))!.WavFile);
+        Assert.Null(voice.ClipFor(new InstrumentRequest(step, 0, "WAH_CHO_KI"))!.Synthesize);
+        Assert.Equal("hit1.wav", voice.ClipFor(new InstrumentRequest(step, 0, "WAH_HAMMER"))!.WavFile);
+        Assert.Equal("hit2.wav", voice.ClipFor(new InstrumentRequest(step, 3, "WAH_HAMMER"))!.WavFile);
+        Assert.Equal("b.wav", voice.ClipFor(new InstrumentRequest(step, 1, "KI_HOP"))!.WavFile);
+        Assert.Null(new CustomPackInstrument(CustomPack.Empty).ClipFor(new InstrumentRequest(step, 0, "KI_HOP")));
     }
 
     sealed class BellInstrument : IInstrument
@@ -154,8 +176,8 @@ public class InstrumentTests
         public string Id => "bell";
         public string DisplayName => "Bell";
         public IEnumerable<string> Aliases => [];
-        public InstrumentClip ClipFor(ChordStep step, int stepIndex) =>
-            PitchedClip.Create(this, step, ["C6"], () => PianoInstrument.Render(["C6"]));
+        public InstrumentClip? ClipFor(InstrumentRequest request) =>
+            PitchedClip.Create(this, request.Step, ["C6"], () => PianoInstrument.Render(["C6"]));
     }
 }
 
@@ -184,11 +206,12 @@ public class AudioTests
     public void InstrumentsDoNotSoundAlike()
     {
         var step = ChordSettings.DefaultSteps()[0];
-        var piano = InstrumentCatalog.Create().Resolve("piano", out _).ClipFor(step, 0).Synthesize();
-        var acoustic = InstrumentCatalog.Create().Resolve("acoustic", out _).ClipFor(step, 0).Synthesize();
-        var electric = InstrumentCatalog.Create().Resolve("electric", out _).ClipFor(step, 0).Synthesize();
-        var jazz = InstrumentCatalog.Create().Resolve("jazz", out _).ClipFor(step, 0).Synthesize();
-        var drums = InstrumentCatalog.Create().Resolve("drums", out _).ClipFor(step, 0).Synthesize();
+        InstrumentRequest play = new(step, 0, null);
+        var piano = InstrumentCatalog.Create().Resolve("piano", out _).ClipFor(play)!.Synthesize!();
+        var acoustic = InstrumentCatalog.Create().Resolve("acoustic", out _).ClipFor(play)!.Synthesize!();
+        var electric = InstrumentCatalog.Create().Resolve("electric", out _).ClipFor(play)!.Synthesize!();
+        var jazz = InstrumentCatalog.Create().Resolve("jazz", out _).ClipFor(play)!.Synthesize!();
+        var drums = InstrumentCatalog.Create().Resolve("drums", out _).ClipFor(play)!.Synthesize!();
 
         Assert.True(Difference(piano, acoustic) > 0.08);
         Assert.True(Difference(acoustic, electric) > 0.05);
@@ -219,10 +242,12 @@ public class AudioTests
             var count = instrument is DrumKitInstrument ? DrumKitInstrument.Patterns.Length : steps.Count;
             for (var index = 0; index < count; index++)
             {
-                var clip = instrument.ClipFor(steps[Math.Min(index, steps.Count - 1)], index);
+                var clip = instrument.ClipFor(new InstrumentRequest(steps[Math.Min(index, steps.Count - 1)], index, null));
+                if (clip?.Synthesize is not Func<short[]> synthesize)
+                    continue;
                 var path = Path.Combine(directory, instrument.Id, clip.WavFile ?? clip.Label + ".wav");
                 var shipped = File.ReadAllBytes(path);
-                Assert.Equal(ChordSynth.EncodeWav(clip.Synthesize()), shipped);
+                Assert.Equal(ChordSynth.EncodeWav(synthesize()), shipped);
                 var decoded = ChordSynth.DecodeWav(shipped);
                 Assert.Contains(decoded, sample => Math.Abs(sample) > 1000);
                 Assert.Equal(0, decoded[^1]);
