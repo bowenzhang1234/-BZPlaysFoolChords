@@ -1,6 +1,6 @@
 # BZ Plays Fool Chords
 
-When the Fool plays a card that sings **Wah**, **Cho**, or **Ki**, this mod plays a real musical chord, or a short drum groove if drums are selected. By default the vanilla voice is replaced. Pitched instruments cycle C, G, Am, and F. The default instrument is piano.
+When the Fool plays a card that sings **Wah**, **Cho**, or **Ki**, this mod plays a piano chord. By default Wah is C major, Cho is G major, and Ki is A minor, so Wah Cho Ki plays those three chords in order. The sound source and the chord choice are separate settings.
 
 The Fool is on the public beta (added in 0.113.0, November 2026). Opt into that beta in Steam before expecting the cards to exist. This mod does not change card text, damage, or block. `affects_gameplay` is false.
 
@@ -12,9 +12,7 @@ The musical noise is not a separate "make a sound" effect written on one card. M
 - `event:/sfx/characters/fugitive/fugitive_cho`
 - `event:/sfx/characters/fugitive/fugitive_ki`
 
-`fugitive` is the Fool's internal audio name. A single-melody card such as Wah Hammer plays one event. **Wah Cho Ki** (`WAH_CHO_KI`) plays all three in a row, so it is the card that most literally makes the musical noise. The mod still defaults to every card that triggers those events, and collapses the extra syllables of a compound card into one chord.
-
-That default is deliberate: the noise belongs to the melody voice, not to one card id, and a future melody card will keep working. To limit it, set `cardIds` in `chords.cfg`.
+`fugitive` is the Fool's internal audio name. A single-melody card such as Wah Hammer plays one event. **Wah Cho Ki** (`WAH_CHO_KI`) plays all three in a row, so it is the card that most literally makes the musical noise. The mod plays a sound for every one of those events. Wah Cho Ki therefore plays three chords, at the same moments the game plays the three syllables. To limit which cards do this, set `cardIds` in `chords.cfg`.
 
 Known melody card ids as of beta 0.113.x:
 
@@ -55,26 +53,65 @@ There is a separate workshop mod, [Chowayo](https://github.com/guppi-tw/sts2-cho
 5. Start the game, open Settings, and enable **BZ Plays Fool Chords** in the mod list. Restart if the game asks.
 6. Play the Fool and play a Wah, Cho, or Ki card. The log line starts with `[BZPlaysFoolChords]`. The developer console (`~`) command `open logs` shows it.
 
-## Choose an instrument
+## Choose a sound source
 
-The base game’s mod screen only turns mods on and off. It does not have a per-mod options page, and this mod does not require the third-party Mod Config or RitsuLib settings screens. The setting lives in `chords.cfg`, next to the DLL.
-
-Edit `mods\BZPlaysFoolChords\chords.cfg`, then restart the game:
+The base game’s mod screen only turns mods on and off. It does not have a per-mod options page. The setting lives in `chords.cfg`, next to the DLL. This build ships one synthesized instrument, piano, and a folder for your own recordings. The card-play hook only asks the active `IInstrument` for a clip. It does not know whether that clip is piano or a file.
 
 ```ini
-instrument = jazz
+instrument = piano
 ```
 
-| Value | What you hear |
-| --- | --- |
-| `piano` | Hammered piano triads. This is the default. |
-| `acoustic` or `guitar` | Plucked acoustic guitar. |
-| `electric` | The same chords through a soft-clipped electric tone. |
-| `jazz` or `rhodes` | A tremolo electric piano. C, G, Am, and F become maj7 / min9 voicings (Cmaj9, Gmaj7, Am9, Fmaj9). |
-| `drums` | A short kit groove instead of a chord. The four steps are backbeat, push, hats, and a snare fill with a crash. |
-| `custom` | Wav files you add under `audio\custom\`. See below. |
+```ini
+instrument = samples
+samples = audio/samples
+```
 
-`piano`, `acoustic`, `electric`, and `jazz` read `audio\<instrument>\C.wav` and the other progression files. `drums` reads `audio\drums\backbeat.wav`, `push.wav`, `hats.wav`, and `fill.wav`. If a file is missing, the mod synthesizes that voice. All of these sounds are generated in this repo. No third-party samples.
+`samples` can be any folder. A path that is not absolute is relative to the mod folder. Drop wav or ogg files there. No code change and no extra manifest. The first file that exists is used, in this order:
+
+1. The syllable: `wah.wav`, `cho.ogg`, `ki.wav`
+2. The chord: `C.wav`, `G.ogg`, `Am.wav`
+3. The card id: `WAH_CHO_KI.wav`
+
+A recording of your own voice is the same kind of file. If nothing matches, the game's melody voice is left as it is.
+
+## Choose how chords are picked
+
+`mapping` is a separate setting. The hook asks the active `ISoundMapping` for a chord and does not know which strategy that is. Each syllable event is mapped on its own.
+
+Per syllable, the default:
+
+```ini
+mapping = per-syllable
+syllable.wah = C
+syllable.cho = G
+syllable.ki = Am
+```
+
+Loop, in order, ignoring which syllable or card it was. Wah Cho Ki walks three steps of the list:
+
+```ini
+mapping = loop
+progression = C | G | Am | F
+```
+
+Random, from a pool:
+
+```ini
+mapping = random
+pool = C | G | Am | F
+```
+
+One chord, or a sequence, for a card id or a card type. A sequence advances once per syllable of that card. Unmapped cards use `fallback`. If `fallback` is omitted, unmapped cards use the per-syllable chords. Card type is read from the game when that value is available. Card id is the reliable key.
+
+```ini
+mapping = per-card
+card.WAH_CHO_KI = C | G | Am
+card.WAH_HAMMER = C
+type.Attack = F
+fallback = Am
+```
+
+A chord token can be a name (`C`, `G`, `Am`, `F`) or notes (`Dm:D4,F4,A4`).
 
 ## Change the chords
 
@@ -98,45 +135,25 @@ Replace the whole progression with notes. `C4` is middle C. Accidentals are `#` 
 progression = C:C4,E4,G4 | Am:A3,C4,E4 | F:F3,A3,C4 | G:G3,B3,D4
 ```
 
-Or replace the wavs under `audio\piano\`, `audio\acoustic\`, `audio\electric\`, `audio\jazz\`, or `audio\drums\` with your own 16-bit mono files, keeping the file names. A note list in `progression` is played on the selected instrument and skips that instrument’s built-in jazz voicing. Drums ignore note names and still cycle their four grooves, one per progression step.
+Or replace `audio\piano\C.wav`, `G.wav`, `Am.wav`, and `F.wav` with your own 16-bit mono files, keeping the names. For a voice recording, use `instrument = samples` instead of replacing the piano files.
 
 `volume` is an extra multiplier. The chord also follows the Master and SFX sliders (each slider value is squared, which is what the game sends to its mixer). Try `volume = 2` or `4` if it is too quiet.
 
-`debounceMs` is how long extra Wah/Cho/Ki syllables from the same card stay on the chord that just played. Wah Cho Ki sings three times; 1100 ms keeps that as one chord. Lower it if two different melody cards played back to back are sharing a chord.
-
-The shipped wavs are generated by `tools\GenerateChords`. Regenerate them after changing a voice:
+The shipped piano wavs are generated by `tools\GenerateChords`. Regenerate them after changing the piano synth:
 
 ```powershell
 dotnet run --project tools\GenerateChords\GenerateChords.csproj -c Release -- src\BZPlaysFoolChords\audio
 ```
 
-## Use your own sounds
+## Add a sound source or a mapping
 
-`instrument = custom` loads another instrument from `mods\BZPlaysFoolChords\audio\custom\`. The hook does not treat it differently from piano or drums. It asks for a clip, and the pack either names a wav or declines. A decline leaves the game's melody voice in place, so a missing file does not play silence.
+Playback never decides which chord or which instrument. It receives a clip. The hook asks `ISoundMapping.Map` for a `MusicalRequest`, then `IInstrument.ClipFor` for a clip.
 
-Edit `audio\custom\pack.cfg` (this is not a `.json` file, because the game treats every `.json` under `mods\` as a mod manifest):
+To add a synthesized voice, implement `IInstrument` and register it in `InstrumentCatalog.Create`. To add a way of choosing chords, implement `ISoundMapping` and register it in `MappingCatalog.Create`. Either class reads whatever keys it needs from the config dictionary. No edit to `MelodySfxPatch` or `GodotChordOutput` is required.
 
-```ini
-files = my-chord.wav | another-chord.wav
-card.WAH_CHO_KI = wah-cho-ki.wav
-card.WAH_HAMMER = hit-1.wav | hit-2.wav
-```
+A folder of recordings does not need a new class. `instrument = samples` already plays files you add under `samples`.
 
-Put those wavs in the same folder. `files` is the cycle for cards you did not name. A `card.` line wins for that card, and several files on one line take turns each time that card is played. Card ids are the same ones listed above (`WAH_CHO_KI`, `WAH_HAMMER`, and the rest). Names like `Wah Hammer` are accepted. Paths such as `..\something.wav` are ignored.
-
-Only `.wav` files are loaded. The player does not synthesize a fallback chord for this pack.
-
-Not built yet: an in-game pack editor, more than one pack folder, ogg or mp3, and picking a pack without restarting.
-
-## Add an instrument
-
-The card-play hook only asks the active `IInstrument` for a clip. The request carries the progression step and the card id, so a voice can map individual cards. Playback only receives the clip. Neither one contains a list of instruments. `custom` is the built-in example of a file-backed voice.
-
-1. Add a class that implements `IInstrument` (see `src\BZPlaysFoolChords\Instruments\`). `ClipFor` returns a clip, or null to keep the vanilla melody sound.
-2. Register one instance in `InstrumentCatalog.Create`. That is the only registration list.
-3. Put 16-bit mono wavs in `audio\<id>\`, or let `ClipFor` synthesize when the file is absent. Run `GenerateChords` if you want generated files checked in.
-
-`chords.cfg` can then set `instrument` to the new id or any alias the class reports. No edit to `MelodySfxPatch`, `ChordSession`, or `GodotChordOutput` is required.
+Not built yet: an in-game settings page, more than one sample folder at a time, and mp3. Ogg and wav are both loaded.
 
 ## Build checks
 
@@ -147,7 +164,7 @@ dotnet test tests\BZPlaysFoolChords.Tests\BZPlaysFoolChords.Tests.csproj -c Rele
 dotnet build src\BZPlaysFoolChords\BZPlaysFoolChords.csproj -c Release
 ```
 
-The tests cover note tuning, the card-id spelling, the config file, the C–G–Am–F cycle, the one-chord-per-card debounce, that each shipped wav matches its instrument, that the five voices sound different, and that a newly registered instrument is what the lookup returns.
+The tests cover note tuning, the card-id spelling, the config file, per-syllable, loop, random, and per-card mappings, the sample-folder lookup, and that a newly registered instrument or mapping is what the lookup returns.
 
 ## What was not run in the game
 
@@ -158,4 +175,4 @@ This environment cannot launch Slay the Spire 2, so nothing here was confirmed i
 - `AudioStreamWav` can be constructed from 16-bit PCM, or `LoadFromFile` can open the wavs, and an `AudioStreamPlayer` parented to the combat room is audible. Playback is Godot audio shaped like the Master and SFX sliders. It is not routed through an FMOD bank, so a paused SFX bus may not pause a chord that has already started.
 - The card id is read from the call stack (`MegaCrit.Sts2.Core.Models.Cards`) while the voice plays. That works if the voice still starts synchronously inside the card play. If a patch cannot see the card and `cardIds` is set, that sound is left vanilla. An empty `cardIds` does not need the stack.
 - Menu names and the exact beta build on a given PC can move. `min_game_version` is `0.113.0`.
-- The instrument choice was not exercised in a combat. Switching it is a `chords.cfg` edit plus a restart, as described above. Whether each voice is loud enough next to the game’s mixer is unverified; raise `volume` if a voice is quiet.
+- Switching instrument or mapping, and loading a user wav or ogg in combat, were not heard in the game. Card type (`type.Attack`) is read from the live card when the game exposes it. If that read fails, use a `card.` line. Card id from the play stack is the reliable key. Raise `volume` if the piano is quieter than the game.

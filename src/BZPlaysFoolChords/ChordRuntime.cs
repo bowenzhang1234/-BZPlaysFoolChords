@@ -62,13 +62,15 @@ sealed class ChordSession
 {
     readonly ChordSettings _settings;
     readonly IInstrument _instrument;
-    readonly ProgressionState _state = new();
+    readonly ISoundMapping _mapping;
     readonly GodotChordOutput _output;
+    int _playIndex;
 
-    public ChordSession(ChordSettings settings, string audioDirectory, IInstrument instrument)
+    public ChordSession(ChordSettings settings, string audioDirectory, IInstrument instrument, ISoundMapping mapping)
     {
         _settings = settings;
         _instrument = instrument;
+        _mapping = mapping;
         _output = new GodotChordOutput(audioDirectory, settings.Volume);
     }
 
@@ -83,36 +85,63 @@ sealed class ChordSession
         if (combat?.GetType().GetProperty("IsEnding")?.GetValue(combat) is true)
             return true;
 
-        if (args == null || args.Length == 0 || args[0] is not string sfx)
+        if (args == null || args.Length == 0 || args[0] is not string sfx || !MelodyEvents.IsMelodyVoice(sfx))
             return true;
 
         var callVolume = args.Length > 1 && args[1] is float volume ? volume : 1f;
-        var cardId = CardIds.FromStack();
-        var decision = _state.Consider(sfx, cardId, _settings, Environment.TickCount64);
-        switch (decision.Action)
+        var context = PlayContext.Read();
+        if (_settings.CardIds.Count > 0 && (string.IsNullOrEmpty(context.CardId) || !_settings.CardIds.Contains(context.CardId)))
+            return true;
+
+        var music = _mapping.Map(new SoundEvent(sfx, context.CardId, context.CardType, _playIndex++));
+        if (music == null)
+            return true;
+
+        var clip = _instrument.ClipFor(new InstrumentRequest(music.Value, context.CardId));
+        if (clip == null)
+            return true;
+
+        if (!_output.TryPlay(clip, callVolume))
         {
-            case PlayAction.Ignore:
-                return true;
-            case PlayAction.SuppressOnly:
-                return false;
-            case PlayAction.PlayChord:
-                var step = _settings.Steps[decision.ChordIndex];
-                var clip = _instrument.ClipFor(new InstrumentRequest(step, decision.ChordIndex, cardId));
-                if (clip == null)
-                    return true;
+            GameLog.Warn($"Could not play {_instrument.DisplayName} {clip.Label}. Leaving the original melody sound in place.");
+            return true;
+        }
 
-                var played = _output.TryPlay(clip, callVolume);
-                if (!played)
-                {
-                    GameLog.Warn($"Could not play {_instrument.DisplayName} {clip.Label}. Leaving the original melody sound in place.");
-                    return true;
-                }
+        GameLog.Info(string.Create(CultureInfo.InvariantCulture,
+            $"Played {_instrument.DisplayName} {clip.Label} ({music.Value.Syllable}) for {(context.CardId ?? "a melody card")}."));
+        return !_settings.ReplaceVanilla;
+    }
+}
 
-                GameLog.Info(string.Create(CultureInfo.InvariantCulture,
-                    $"Played {_instrument.DisplayName} {clip.Label} for {(cardId ?? "a melody card")} ({sfx})."));
-                return !_settings.ReplaceVanilla;
-            default:
-                return true;
+static class PlayContext
+{
+    public static (string? CardId, string? CardType) Read() => (CardIds.FromStack(), TryCardType());
+
+    static string? TryCardType()
+    {
+        try
+        {
+            var combat = GameTypes.Static("MegaCrit.Sts2.Core.Combat.CombatManager", "Instance");
+            var history = combat?.GetType().GetProperty("History")?.GetValue(combat);
+            var started = history?.GetType().GetProperty("CardPlaysStarted")?.GetValue(history) as System.Collections.IEnumerable;
+            object? last = null;
+            if (started != null)
+            {
+                foreach (var item in started)
+                    last = item;
+            }
+
+            var play = last?.GetType().GetProperty("CardPlay")?.GetValue(last);
+            var card = play?.GetType().GetProperty("Card")?.GetValue(play);
+            var type = card?.GetType().GetProperty("Type")?.GetValue(card)
+                ?? card?.GetType().GetProperty("CardType")?.GetValue(card);
+            var text = type?.ToString();
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch (Exception error)
+        {
+            GameLog.Warn("Could not read the card type: " + error.Message);
+            return null;
         }
     }
 }
@@ -138,25 +167,32 @@ static class ChordRuntime
         else
         {
             settings = ChordSettings.Parse("");
-            GameLog.Warn("chords.cfg was not next to the mod DLL. Using C, G, Am, F.");
+            GameLog.Warn("chords.cfg was not next to the mod DLL. Using per-syllable piano.");
         }
 
         foreach (var warning in settings.Warnings)
             GameLog.Warn(warning);
 
-        var instrument = InstrumentCatalog.Create().Resolve(settings.Instrument, out var instrumentWarning);
+        var samples = ChordSettings.ResolveSamplesDirectory(directory, settings.Samples);
+        var instrument = InstrumentCatalog.Create(samples).Resolve(settings.Instrument, out var instrumentWarning);
         if (instrumentWarning != null)
             GameLog.Warn(instrumentWarning);
         foreach (var warning in instrument.StartupWarnings)
             GameLog.Warn(warning);
 
-        Session = new ChordSession(settings, Path.Combine(directory, "audio"), instrument);
+        var mapping = MappingCatalog.Create(settings.Entries).Resolve(settings.Mapping, out var mappingWarning);
+        if (mappingWarning != null)
+            GameLog.Warn(mappingWarning);
+        foreach (var warning in mapping.StartupWarnings)
+            GameLog.Warn(warning);
+
+        Session = new ChordSession(settings, Path.Combine(directory, "audio"), instrument, mapping);
         var (master, sfx) = ReadSliders();
         Session.ApplySlider(master: true, master);
         Session.ApplySlider(master: false, sfx);
         Patch();
         var cards = settings.CardIds.Count == 0 ? "every melody voice" : string.Join(", ", settings.CardIds);
-        GameLog.Info($"Ready. Instrument {instrument.DisplayName}, mode {settings.Mode}, cards: {cards}, steps: {string.Join(" | ", settings.Steps.Select(step => step.Label))}.");
+        GameLog.Info($"Ready. Instrument {instrument.DisplayName}, mapping {mapping.DisplayName}, mode {settings.Mode}, cards: {cards}.");
     }
 
     static void Patch()

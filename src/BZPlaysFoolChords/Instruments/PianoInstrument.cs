@@ -8,8 +8,10 @@ public sealed class PianoInstrument : IInstrument
 
     public InstrumentClip? ClipFor(InstrumentRequest request)
     {
-        var notes = PitchedClip.Notes(request.Step);
-        return PitchedClip.Create(this, request.Step, notes, () => Render(notes));
+        var notes = request.Music.Notes.Length > 0
+            ? request.Music.Notes
+            : ChordLibrary.NotesFor(request.Music.Label) ?? ["C4", "E4", "G4"];
+        return PitchedClip.Create(this, request.Music, notes, () => Render(notes));
     }
 
     public static short[] Render(IReadOnlyList<string> notes)

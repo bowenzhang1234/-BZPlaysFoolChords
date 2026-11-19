@@ -9,6 +9,13 @@ public static class MelodyEvents
     public const string Cho = "event:/sfx/characters/fugitive/fugitive_cho";
     public const string Ki = "event:/sfx/characters/fugitive/fugitive_ki";
 
-    public static bool IsMelodyVoice(string? sfx) =>
-        sfx is Wah or Cho or Ki;
+    public static bool IsMelodyVoice(string? sfx) => Syllable(sfx) != null;
+
+    public static string? Syllable(string? sfx) => sfx switch
+    {
+        Wah => "wah",
+        Cho => "cho",
+        Ki => "ki",
+        _ => null,
+    };
 }

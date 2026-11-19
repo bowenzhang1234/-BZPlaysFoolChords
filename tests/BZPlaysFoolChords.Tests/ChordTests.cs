@@ -48,10 +48,12 @@ public class SettingsTests
         Assert.Empty(settings.Warnings);
         Assert.Equal(ChordMode.Replace, settings.Mode);
         Assert.Equal("piano", settings.Instrument);
+        Assert.Equal("per-syllable", settings.Mapping);
         Assert.Empty(settings.CardIds);
-        Assert.Equal(1100, settings.DebounceMs);
-        Assert.Equal("C|G|Am|F", string.Join('|', settings.Steps.Select(step => step.Label)));
-        Assert.Equal("C.wav|G.wav|Am.wav|F.wav", string.Join('|', settings.Steps.Select(step => step.WavFile)));
+        var syllables = new PerSyllableMapping(settings.Entries);
+        Assert.Equal("C", syllables.Map(TestSounds.Event(MelodyEvents.Wah))!.Value.Label);
+        Assert.Equal("G", syllables.Map(TestSounds.Event(MelodyEvents.Cho))!.Value.Label);
+        Assert.Equal("Am", syllables.Map(TestSounds.Event(MelodyEvents.Ki))!.Value.Label);
     }
 
     [Fact]
@@ -60,68 +62,101 @@ public class SettingsTests
         var settings = ChordSettings.Parse("""
             mode = alongside
             cardIds = WahChoKi, KI_HOP
+            mapping = loop
             progression = Dm:D4,F4,A4 | Bb:Bb3,D4,F4
             """);
 
         Assert.Empty(settings.Warnings);
         Assert.Equal(ChordMode.Alongside, settings.Mode);
         Assert.Equal(["KI_HOP", "WAH_CHO_KI"], settings.CardIds.OrderBy(id => id).ToArray());
-        Assert.Equal("Dm", settings.Steps[0].Label);
-        Assert.True(settings.Steps[0].CustomNotes);
-        Assert.Equal(["D4", "F4", "A4"], settings.Steps[0].Notes);
-        Assert.Null(settings.Steps[0].WavFile);
-        Assert.Equal(["Bb3", "D4", "F4"], settings.Steps[1].Notes);
+        var loop = new LoopMapping(settings.Entries);
+        var first = loop.Map(TestSounds.Event(MelodyEvents.Wah))!.Value;
+        Assert.Equal("Dm", first.Label);
+        Assert.True(first.CustomNotes);
+        Assert.Equal(["D4", "F4", "A4"], first.Notes);
+        Assert.Equal(["Bb3", "D4", "F4"], loop.Map(TestSounds.Event(MelodyEvents.Cho))!.Value.Notes);
     }
 }
 
-public class ProgressionTests
+static class TestSounds
 {
-    static ChordSettings AllCards() => ChordSettings.Parse("progression = C.wav | G.wav | Am.wav | F.wav");
+    public static SoundEvent Event(string path, string? cardId = null, string? cardType = null, int index = 0) =>
+        new(path, cardId, cardType, index);
+}
 
+public class MappingTests
+{
     [Fact]
-    public void SuccessivePlaysCycleAndACompoundCardStaysOnOneChord()
+    public void PerSyllablePlaysEveryVoiceOfACompoundCard()
     {
-        var state = new ProgressionState();
-        var settings = AllCards();
-
-        var first = state.Consider(MelodyEvents.Wah, "WAH_CHO_KI", settings, nowMs: 1_000);
-        var secondSyllable = state.Consider(MelodyEvents.Cho, "WAH_CHO_KI", settings, nowMs: 1_450);
-        var thirdSyllable = state.Consider(MelodyEvents.Ki, "WAH_CHO_KI", settings, nowMs: 1_900);
-        var nextCard = state.Consider(MelodyEvents.Wah, "WAH_HAMMER", settings, nowMs: 3_200);
-
-        Assert.Equal(PlayAction.PlayChord, first.Action);
-        Assert.Equal(0, first.ChordIndex);
-        Assert.Equal(PlayAction.SuppressOnly, secondSyllable.Action);
-        Assert.Equal(PlayAction.SuppressOnly, thirdSyllable.Action);
-        Assert.Equal(PlayAction.PlayChord, nextCard.Action);
-        Assert.Equal(1, nextCard.ChordIndex);
+        var mapping = new PerSyllableMapping(ChordSettings.Parse("").Entries);
+        Assert.Equal("C", mapping.Map(TestSounds.Event(MelodyEvents.Wah, "WAH_CHO_KI"))!.Value.Label);
+        Assert.Equal("G", mapping.Map(TestSounds.Event(MelodyEvents.Cho, "WAH_CHO_KI"))!.Value.Label);
+        Assert.Equal("Am", mapping.Map(TestSounds.Event(MelodyEvents.Ki, "WAH_CHO_KI"))!.Value.Label);
+        Assert.Null(mapping.Map(TestSounds.Event("event:/sfx/ui/click")));
     }
 
     [Fact]
-    public void ACardFilterLeavesOtherMelodyCardsAlone()
+    public void LoopIgnoresTheSyllableAndWalksTheList()
     {
-        var state = new ProgressionState();
-        var settings = ChordSettings.Parse("cardIds = WAH_CHO_KI");
-
-        var other = state.Consider(MelodyEvents.Wah, "WAH_HAMMER", settings, 0);
-        var chosen = state.Consider(MelodyEvents.Ki, "WAH_CHO_KI", settings, 50);
-        var strike = state.Consider("event:/sfx/ui/cards/card_movement_B_into_discard", "STRIKE", settings, 2_000);
-
-        Assert.Equal(PlayAction.Ignore, other.Action);
-        Assert.Equal(PlayAction.PlayChord, chosen.Action);
-        Assert.Equal(PlayAction.Ignore, strike.Action);
-        Assert.Equal(0, chosen.ChordIndex);
+        var mapping = new LoopMapping(ChordSettings.Parse("progression = C | G | Am | F").Entries);
+        Assert.Equal(["C", "G", "Am", "F", "C"], new[]
+        {
+            mapping.Map(TestSounds.Event(MelodyEvents.Ki))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Wah))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Cho))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Ki))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Wah))!.Value.Label,
+        });
     }
 
     [Fact]
-    public void AlongsideModeKeepsTheVanillaSyllables()
+    public void RandomStaysInsideThePool()
     {
-        var state = new ProgressionState();
-        var settings = ChordSettings.Parse("mode = alongside");
-        state.Consider(MelodyEvents.Wah, "KI_HOP", settings, 0);
-        var extra = state.Consider(MelodyEvents.Cho, "KI_HOP", settings, 400);
+        var mapping = new RandomMapping(ChordSettings.Parse("pool = C | Am").Entries, new Random(1));
+        var labels = Enumerable.Range(0, 12).Select(_ => mapping.Map(TestSounds.Event(MelodyEvents.Wah))!.Value.Label).ToArray();
+        Assert.All(labels, label => Assert.Contains(label, new[] { "C", "Am" }));
+        Assert.Contains("C", labels);
+        Assert.Contains("Am", labels);
+    }
 
-        Assert.Equal(PlayAction.Ignore, extra.Action);
+    [Fact]
+    public void PerCardUsesTheCardSequenceThenTheFallback()
+    {
+        var mapping = new PerCardMapping(ChordSettings.Parse("""
+            card.WAH_CHO_KI = C | G | Am
+            type.Attack = F
+            fallback = Am
+            """).Entries);
+
+        Assert.Equal(["C", "G", "Am"], new[]
+        {
+            mapping.Map(TestSounds.Event(MelodyEvents.Wah, "WAH_CHO_KI"))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Cho, "WAH_CHO_KI"))!.Value.Label,
+            mapping.Map(TestSounds.Event(MelodyEvents.Ki, "WAH_CHO_KI"))!.Value.Label,
+        });
+        Assert.Equal("F", mapping.Map(TestSounds.Event(MelodyEvents.Wah, "STRIKE", "Attack"))!.Value.Label);
+        Assert.Equal("Am", mapping.Map(TestSounds.Event(MelodyEvents.Ki, "KI_HOP"))!.Value.Label);
+    }
+
+    [Fact]
+    public void ANewMappingIsSelectedOnlyByRegistration()
+    {
+        var registry = new MappingRegistry();
+        registry.Register(new PerSyllableMapping(new Dictionary<string, string>()));
+        registry.Register(new FixedMapping());
+        Assert.Equal("fixed", registry.Resolve("fixed", out var warning).Id);
+        Assert.Null(warning);
+        Assert.Equal("per-syllable", registry.Resolve("nope", out var fallback).Id);
+        Assert.Contains("nope", fallback);
+    }
+
+    sealed class FixedMapping : ISoundMapping
+    {
+        public string Id => "fixed";
+        public string DisplayName => "Fixed";
+        public IEnumerable<string> Aliases => [];
+        public MusicalRequest? Map(SoundEvent sound) => new("C", "wah", ["C4", "E4", "G4"], "C.wav", false);
     }
 }
 
@@ -130,19 +165,16 @@ public class InstrumentTests
     [Fact]
     public void BuiltInVoicesResolveByNameAndANewVoiceNeedsOnlyRegistration()
     {
-        var registry = InstrumentCatalog.Create();
-        Assert.Equal(["piano", "acoustic", "electric", "jazz", "drums", "custom"], registry.All.Select(voice => voice.Id).ToArray());
-
-        Assert.Equal("electric", registry.Resolve("Electric Guitar", out var warning).Id);
+        var registry = InstrumentCatalog.Create(Path.GetTempPath());
+        Assert.Equal(["piano", "samples"], registry.All.Select(voice => voice.Id).ToArray());
+        Assert.Equal("samples", registry.Resolve("voice", out var warning).Id);
         Assert.Null(warning);
-        Assert.Equal("acoustic", registry.Resolve("guitar", out _).Id);
-        Assert.Equal("jazz", registry.Resolve("rhodes", out _).Id);
 
         var withBell = new InstrumentRegistry();
         withBell.Register(new PianoInstrument());
         withBell.Register(new BellInstrument());
-        var step = ChordSettings.DefaultSteps()[0];
-        var clip = withBell.Resolve("bell", out _).ClipFor(new InstrumentRequest(step, 0, null));
+        var music = new MusicalRequest("C", "wah", ["C4", "E4", "G4"], "C.wav", false);
+        var clip = withBell.Resolve("bell", out _).ClipFor(new InstrumentRequest(music, null));
 
         Assert.NotNull(clip);
         Assert.Equal("bell", clip.InstrumentId);
@@ -151,24 +183,19 @@ public class InstrumentTests
     }
 
     [Fact]
-    public void CustomPackMapsCardsAndLeavesMissingClipsAlone()
+    public void SampleFolderPrefersASyllableFileThenAChordFile()
     {
-        var pack = CustomPack.Parse("""
-            files = a.wav | b.wav
-            card.WAH_CHO_KI = big.wav
-            card.Wah Hammer = hit1.wav | hit2.wav
-            card.bad = ../nope.wav
-            """);
-        Assert.Contains(pack.Warnings, warning => warning.Contains("nope", StringComparison.Ordinal));
+        var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "fool-chords-" + Guid.NewGuid().ToString("N"))).FullName;
+        File.WriteAllBytes(Path.Combine(folder, "C.wav"), [0]);
+        File.WriteAllBytes(Path.Combine(folder, "wah.ogg"), [0]);
+        var voice = new SampleFolderInstrument(folder);
+        var music = new MusicalRequest("C", "wah", ["C4", "E4", "G4"], null, false);
 
-        var voice = new CustomPackInstrument(pack);
-        var step = ChordSettings.DefaultSteps()[0];
-        Assert.Equal("big.wav", voice.ClipFor(new InstrumentRequest(step, 0, "WAH_CHO_KI"))!.WavFile);
-        Assert.Null(voice.ClipFor(new InstrumentRequest(step, 0, "WAH_CHO_KI"))!.Synthesize);
-        Assert.Equal("hit1.wav", voice.ClipFor(new InstrumentRequest(step, 0, "WAH_HAMMER"))!.WavFile);
-        Assert.Equal("hit2.wav", voice.ClipFor(new InstrumentRequest(step, 3, "WAH_HAMMER"))!.WavFile);
-        Assert.Equal("b.wav", voice.ClipFor(new InstrumentRequest(step, 1, "KI_HOP"))!.WavFile);
-        Assert.Null(new CustomPackInstrument(CustomPack.Empty).ClipFor(new InstrumentRequest(step, 0, "KI_HOP")));
+        Assert.Equal(Path.Combine(folder, "wah.ogg"), voice.ClipFor(new InstrumentRequest(music, "WAH_HAMMER"))!.AudioPath);
+
+        File.Delete(Path.Combine(folder, "wah.ogg"));
+        Assert.Equal(Path.Combine(folder, "C.wav"), voice.ClipFor(new InstrumentRequest(music, null))!.AudioPath);
+        Assert.Null(voice.ClipFor(new InstrumentRequest(music with { Label = "Missing", Syllable = "" }, null)));
     }
 
     sealed class BellInstrument : IInstrument
@@ -177,7 +204,7 @@ public class InstrumentTests
         public string DisplayName => "Bell";
         public IEnumerable<string> Aliases => [];
         public InstrumentClip? ClipFor(InstrumentRequest request) =>
-            PitchedClip.Create(this, request.Step, ["C6"], () => PianoInstrument.Render(["C6"]));
+            PitchedClip.Create(this, request.Music, ["C6"], () => PianoInstrument.Render(["C6"]));
     }
 }
 
@@ -193,65 +220,16 @@ public class AudioTests
     }
 
     [Fact]
-    public void JazzVoicingAddsTheSeventhAndNinth()
+    public void ShippedPianoWavsMatchTheSynth()
     {
-        var jazz = Sustain(JazzRhodesInstrument.Render(JazzRhodesInstrument.Voicing("C")), 0.15, 0.25);
-        var piano = Sustain(PianoInstrument.Render(["C4", "E4", "G4"]), 0.15, 0.25);
-
-        Assert.True(Magnitude(jazz, NoteMath.Frequency("B4")) > Magnitude(piano, NoteMath.Frequency("B4")) * 3);
-        Assert.True(Magnitude(jazz, NoteMath.Frequency("D5")) > Magnitude(piano, NoteMath.Frequency("D5")) * 3);
-    }
-
-    [Fact]
-    public void InstrumentsDoNotSoundAlike()
-    {
-        var step = ChordSettings.DefaultSteps()[0];
-        InstrumentRequest play = new(step, 0, null);
-        var piano = InstrumentCatalog.Create().Resolve("piano", out _).ClipFor(play)!.Synthesize!();
-        var acoustic = InstrumentCatalog.Create().Resolve("acoustic", out _).ClipFor(play)!.Synthesize!();
-        var electric = InstrumentCatalog.Create().Resolve("electric", out _).ClipFor(play)!.Synthesize!();
-        var jazz = InstrumentCatalog.Create().Resolve("jazz", out _).ClipFor(play)!.Synthesize!();
-        var drums = InstrumentCatalog.Create().Resolve("drums", out _).ClipFor(play)!.Synthesize!();
-
-        Assert.True(Difference(piano, acoustic) > 0.08);
-        Assert.True(Difference(acoustic, electric) > 0.05);
-        Assert.True(Difference(piano, jazz) > 0.08);
-        Assert.True(Difference(piano, drums) > 0.15);
-    }
-
-    [Fact]
-    public void DrumPatternsVaryAndTheFillHasACymbal()
-    {
-        var backbeat = DrumKitInstrument.Render(0);
-        var fill = DrumKitInstrument.Render(3);
-        Assert.True(Difference(backbeat, fill) > 0.08);
-
-        var kick = Sustain(backbeat, 0.01, 0.08);
-        var crash = Sustain(fill, 0.68, 0.16);
-        Assert.True(Magnitude(kick, 70) > Magnitude(crash, 70));
-        Assert.True(Magnitude(crash, 3300) > Magnitude(kick, 3300) * 2);
-    }
-
-    [Fact]
-    public void ShippedWavsMatchTheSynth()
-    {
-        var directory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "BZPlaysFoolChords", "audio"));
-        var steps = ChordSettings.DefaultSteps();
-        foreach (var instrument in InstrumentCatalog.Create().All)
+        var directory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "BZPlaysFoolChords", "audio", "piano"));
+        foreach (var (name, notes) in ChordLibrary.Defaults)
         {
-            var count = instrument is DrumKitInstrument ? DrumKitInstrument.Patterns.Length : steps.Count;
-            for (var index = 0; index < count; index++)
-            {
-                var clip = instrument.ClipFor(new InstrumentRequest(steps[Math.Min(index, steps.Count - 1)], index, null));
-                if (clip?.Synthesize is not Func<short[]> synthesize)
-                    continue;
-                var path = Path.Combine(directory, instrument.Id, clip.WavFile ?? clip.Label + ".wav");
-                var shipped = File.ReadAllBytes(path);
-                Assert.Equal(ChordSynth.EncodeWav(synthesize()), shipped);
-                var decoded = ChordSynth.DecodeWav(shipped);
-                Assert.Contains(decoded, sample => Math.Abs(sample) > 1000);
-                Assert.Equal(0, decoded[^1]);
-            }
+            var shipped = File.ReadAllBytes(Path.Combine(directory, name + ".wav"));
+            Assert.Equal(ChordSynth.EncodeWav(PianoInstrument.Render(notes.Split(','))), shipped);
+            var decoded = ChordSynth.DecodeWav(shipped);
+            Assert.Contains(decoded, sample => Math.Abs(sample) > 1000);
+            Assert.Equal(0, decoded[^1]);
         }
     }
 
@@ -264,19 +242,6 @@ public class AudioTests
 
     static short[] Sustain(short[] samples, double start, double length) =>
         samples.Skip(SampleAt(start)).Take(SampleAt(length)).ToArray();
-
-    static double Difference(short[] left, short[] right)
-    {
-        var count = Math.Min(left.Length, right.Length);
-        double sum = 0;
-        for (var i = 0; i < count; i++)
-        {
-            var delta = (left[i] - right[i]) / 32768.0;
-            sum += delta * delta;
-        }
-
-        return Math.Sqrt(sum / count);
-    }
 
     static int SampleAt(double seconds) => (int)(ChordSynth.SampleRate * seconds);
 

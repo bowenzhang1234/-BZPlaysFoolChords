@@ -8,7 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\*.cs" Exclude="..\..\src\BZPlaysFoolChords\ModEntry.cs;..\..\src\BZPlaysFoolChords\ChordRuntime.cs;..\..\src\BZPlaysFoolChords\GodotChordOutput.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\Instruments\*.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\ChordLibrary.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\ChordSynth.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\SynthMath.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\Instruments\PianoInstrument.cs" />
   </ItemGroup>
 </Project>

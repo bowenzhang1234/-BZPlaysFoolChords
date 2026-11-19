@@ -2,8 +2,6 @@ using System.Globalization;
 
 namespace BZPlaysFoolChords;
 
-public sealed record ChordStep(string Label, string[] Notes, string? WavFile, bool CustomNotes = false);
-
 public enum ChordMode
 {
     Replace,
@@ -14,22 +12,27 @@ public sealed class ChordSettings
 {
     public ChordMode Mode { get; init; } = ChordMode.Replace;
     public string Instrument { get; init; } = "piano";
-    public int DebounceMs { get; init; } = 1100;
+    public string Mapping { get; init; } = "per-syllable";
+    public string Samples { get; init; } = Path.Combine("audio", "samples");
     public float Volume { get; init; } = 1f;
     public IReadOnlySet<string> CardIds { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    public IReadOnlyList<ChordStep> Steps { get; init; } = [];
+    public IReadOnlyDictionary<string, string> Entries { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     public bool ReplaceVanilla => Mode == ChordMode.Replace;
+
+    public static string ResolveSamplesDirectory(string modDirectory, string configured) =>
+        Path.IsPathRooted(configured) ? configured : Path.GetFullPath(Path.Combine(modDirectory, configured));
 
     public static ChordSettings Parse(string text)
     {
         var mode = ChordMode.Replace;
         var instrument = "piano";
-        var debounce = 1100;
+        var mapping = "per-syllable";
+        var samples = Path.Combine("audio", "samples");
         var volume = 1f;
         var cardIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string? progression = null;
+        var entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var warnings = new List<string>();
 
         foreach (var raw in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
@@ -47,6 +50,7 @@ public sealed class ChordSettings
 
             var key = line[..split].Trim();
             var value = line[(split + 1)..].Trim();
+            entries[key] = value;
             switch (key.ToLowerInvariant())
             {
                 case "mode":
@@ -55,16 +59,20 @@ public sealed class ChordSettings
                     else if (value.Equals("alongside", StringComparison.OrdinalIgnoreCase))
                         mode = ChordMode.Alongside;
                     else
-                        warnings.Add($"Unknown mode '{value}'. Using replace.");
+                        warnings.Add($"Unknown mode '{value}'. Using replace. Chord choice uses the mapping setting.");
                     break;
                 case "instrument":
                     instrument = string.IsNullOrWhiteSpace(value) ? "piano" : value.Trim();
                     break;
+                case "mapping":
+                    mapping = string.IsNullOrWhiteSpace(value) ? "per-syllable" : value.Trim();
+                    break;
+                case "samples":
+                    if (!string.IsNullOrWhiteSpace(value))
+                        samples = value.Trim();
+                    break;
                 case "debouncems":
-                    if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
-                        debounce = parsed;
-                    else
-                        warnings.Add($"debounceMs '{value}' is not a whole number. Using {debounce}.");
+                    warnings.Add("debounceMs is ignored. Each Wah, Cho, and Ki syllable plays its own sound.");
                     break;
                 case "volume":
                     if (float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var gain) && gain >= 0)
@@ -80,83 +88,19 @@ public sealed class ChordSettings
                             cardIds.Add(id);
                     }
                     break;
-                case "progression":
-                    progression = value;
-                    break;
-                default:
-                    warnings.Add($"Unknown setting '{key}'.");
-                    break;
             }
-        }
-
-        var steps = ParseProgression(progression, warnings);
-        if (steps.Count == 0)
-        {
-            warnings.Add("Progression was empty. Using C, G, Am, F.");
-            steps = DefaultSteps();
         }
 
         return new ChordSettings
         {
             Mode = mode,
             Instrument = instrument,
-            DebounceMs = debounce,
+            Mapping = mapping,
+            Samples = samples,
             Volume = volume,
             CardIds = cardIds,
-            Steps = steps,
+            Entries = entries,
             Warnings = warnings,
         };
-    }
-
-    public static List<ChordStep> DefaultSteps() =>
-        ChordLibrary.Defaults.Select(chord => new ChordStep(chord.Name, chord.Notes.Split(','), chord.Name + ".wav")).ToList();
-
-    static List<ChordStep> ParseProgression(string? progression, List<string> warnings)
-    {
-        if (string.IsNullOrWhiteSpace(progression))
-            return DefaultSteps();
-
-        var steps = new List<ChordStep>();
-        foreach (var token in progression.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            try
-            {
-                steps.Add(ParseStep(token));
-            }
-            catch (FormatException error)
-            {
-                warnings.Add($"Skipped chord '{token}': {error.Message}");
-            }
-        }
-
-        return steps;
-    }
-
-    static ChordStep ParseStep(string token)
-    {
-        if (token.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            var file = Path.GetFileName(token);
-            var label = Path.GetFileNameWithoutExtension(file);
-            return new ChordStep(label, ChordLibrary.NotesFor(label) ?? [], file);
-        }
-
-        var labelText = token;
-        var notesText = token;
-        var colon = token.IndexOf(':');
-        if (colon > 0)
-        {
-            labelText = token[..colon].Trim();
-            notesText = token[(colon + 1)..].Trim();
-        }
-
-        var notes = notesText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (notes.Length == 0)
-            throw new FormatException("no notes were listed.");
-
-        foreach (var note in notes)
-            NoteMath.Frequency(note);
-
-        return new ChordStep(labelText, notes, null, CustomNotes: true);
     }
 }

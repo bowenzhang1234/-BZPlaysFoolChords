@@ -85,11 +85,13 @@ sealed class GodotChordOutput
             return cached;
 
         object? stream = null;
-        if (!string.IsNullOrEmpty(clip.WavFile))
+        if (!string.IsNullOrEmpty(clip.AudioPath) && File.Exists(clip.AudioPath))
+            stream = GodotRef.LoadStream(clip.AudioPath);
+        else if (!string.IsNullOrEmpty(clip.WavFile))
         {
             var path = Path.Combine(_audioDirectory, clip.InstrumentId, Path.GetFileName(clip.WavFile));
             if (File.Exists(path))
-                stream = GodotRef.LoadWav(path);
+                stream = GodotRef.LoadStream(path);
         }
 
         if (stream == null && clip.Synthesize != null)
@@ -150,6 +152,28 @@ static class GodotRef
 
     public static bool HasAddChild(object node) =>
         node.GetType().GetMethods().Any(method => method.Name == "AddChild" && method.GetParameters().Length > 0);
+
+    public static object? LoadStream(string path)
+    {
+        var typeName = path.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)
+            ? "Godot.AudioStreamOggVorbis"
+            : "Godot.AudioStreamWav";
+        var audioType = GameTypes.Find(typeName);
+        var load = audioType?.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method => method.Name == "LoadFromFile");
+        if (load == null)
+        {
+            GameLog.Warn($"Could not load '{path}'. {typeName} is not available.");
+            return null;
+        }
+
+        var args = new object?[load.GetParameters().Length];
+        args[0] = path;
+        for (var i = 1; i < args.Length; i++)
+            args[i] = load.GetParameters()[i].HasDefaultValue ? load.GetParameters()[i].DefaultValue : null;
+
+        return load.Invoke(null, args);
+    }
 
     public static object? LoadWav(string path)
     {

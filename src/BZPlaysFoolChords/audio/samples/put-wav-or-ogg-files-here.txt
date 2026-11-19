@@ -1,0 +1,9 @@
+Name a file after a syllable, a chord, or a card id.
+
+wah.wav, cho.ogg, and ki.wav match the three melody voices.
+C.wav, G.ogg, and Am.wav match those chords.
+WAH_CHO_KI.wav matches that card.
+
+Set instrument = samples in chords.cfg and restart.
+The first file that exists is used, in the order syllable, chord, card id.
+Wav and ogg are both accepted. A recording of your own voice is fine.

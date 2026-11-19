@@ -16,7 +16,7 @@
     <None Include="BZPlaysFoolChords.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="chords.cfg" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="audio\**\*.wav" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="audio\custom\pack.cfg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="audio\samples\*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseGameAssemblies)' == 'true'">
@@ -51,7 +51,7 @@
     <Copy SourceFiles="$(TargetPath);$(MSBuildThisFileDirectory)BZPlaysFoolChords.json;$(MSBuildThisFileDirectory)chords.cfg" DestinationFolder="$(StageDir)" />
     <Copy SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(StageDir)" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
     <Copy SourceFiles="@(StageAudio)" DestinationFiles="@(StageAudio->'$(StageDir)audio\%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)audio\custom\pack.cfg" DestinationFolder="$(StageDir)audio\custom" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)audio\samples\put-wav-or-ogg-files-here.txt" DestinationFolder="$(StageDir)audio\samples" />
     <Message Importance="high" Text="Staged $(AssemblyName) at $(StageDir)" />
   </Target>
 </Project>

@@ -2,7 +2,7 @@
   "id": "BZPlaysFoolChords",
   "name": "BZ Plays Fool Chords",
   "author": "bowenzhang1234",
-  "description": "Plays a chord or drum groove when the Fool sings Wah, Cho, or Ki. Choose piano, guitar, jazz, drums, or your own wav pack in chords.cfg.",
+  "description": "Plays a piano chord, or your own wav/ogg recording, when the Fool sings Wah, Cho, or Ki. Choose per-syllable, per-card, loop, or random in chords.cfg.",
   "version": "0.1.0",
   "min_game_version": "0.113.0",
   "has_pck": false,
