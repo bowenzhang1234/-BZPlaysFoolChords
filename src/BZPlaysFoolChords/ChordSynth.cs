@@ -61,50 +61,6 @@ public static class NoteMath
 public static class ChordSynth
 {
     public const int SampleRate = 44100;
-    public const double DurationSeconds = 0.90;
-    const double AttackSeconds = 0.02;
-    const double DecaySeconds = 0.16;
-    const double SustainLevel = 0.62;
-    const double ReleaseSeconds = 0.28;
-    const double Peak = 0.72;
-
-    public static byte[] RenderWav(IReadOnlyList<string> notes)
-    {
-        if (notes.Count == 0)
-            throw new ArgumentException("A chord needs at least one note.", nameof(notes));
-
-        var frequencies = new double[notes.Count];
-        for (var i = 0; i < notes.Count; i++)
-            frequencies[i] = NoteMath.Frequency(notes[i]);
-
-        return EncodeWav(Render(frequencies));
-    }
-
-    public static short[] Render(IReadOnlyList<double> frequencies)
-    {
-        var count = (int)(SampleRate * DurationSeconds);
-        var mixed = new double[count];
-        foreach (var frequency in frequencies)
-            AddVoice(mixed, frequency);
-
-        var peak = 0.0;
-        for (var i = 0; i < mixed.Length; i++)
-            peak = Math.Max(peak, Math.Abs(mixed[i]));
-
-        var scale = peak < 1e-9 ? 0 : Peak / peak;
-        var samples = new short[count];
-        for (var i = 0; i < count; i++)
-        {
-            var shaped = mixed[i] * scale * EdgeFade(i, count);
-            var clamped = Math.Clamp(shaped, -1, 1);
-            samples[i] = (short)Math.Round(clamped * short.MaxValue);
-        }
-
-        if (samples.Length > 0)
-            samples[^1] = 0;
-
-        return samples;
-    }
 
     public static byte[] EncodeWav(ReadOnlySpan<short> samples)
     {
@@ -156,52 +112,6 @@ public static class ChordSynth
             samples[i] = BitConverter.ToInt16(wav.Slice(data + i * 2, 2));
 
         return samples;
-    }
-
-    static void AddVoice(double[] mixed, double frequency)
-    {
-        var attack = (int)(SampleRate * AttackSeconds);
-        var decay = (int)(SampleRate * DecaySeconds);
-        var release = (int)(SampleRate * ReleaseSeconds);
-        var sustainStart = Math.Min(mixed.Length, attack + decay);
-        var releaseStart = Math.Max(sustainStart, mixed.Length - release);
-        for (var i = 0; i < mixed.Length; i++)
-        {
-            var time = (double)i / SampleRate;
-            var envelope = Envelope(i, attack, sustainStart, releaseStart, mixed.Length);
-            var fundamental = Math.Sin(2 * Math.PI * frequency * time);
-            var second = Math.Sin(2 * Math.PI * frequency * 2 * time);
-            var third = Math.Sin(2 * Math.PI * frequency * 3 * time);
-            mixed[i] += envelope * (fundamental + 0.18 * second + 0.05 * third);
-        }
-    }
-
-    static double Envelope(int i, int attack, int sustainStart, int releaseStart, int length)
-    {
-        if (i < attack)
-            return attack == 0 ? 1 : (double)i / attack;
-
-        if (i < sustainStart)
-        {
-            var t = (double)(i - attack) / Math.Max(1, sustainStart - attack);
-            return 1 + (SustainLevel - 1) * t;
-        }
-
-        if (i < releaseStart)
-            return SustainLevel;
-
-        var releaseT = (double)(i - releaseStart) / Math.Max(1, length - releaseStart);
-        return SustainLevel * (1 - releaseT);
-    }
-
-    static double EdgeFade(int i, int length)
-    {
-        const int fade = 64;
-        if (i < fade)
-            return (double)i / fade;
-        if (i > length - fade)
-            return Math.Max(0, (length - i) / (double)fade);
-        return 1;
     }
 
     static void WriteInt(byte[] buffer, int offset, int value) =>

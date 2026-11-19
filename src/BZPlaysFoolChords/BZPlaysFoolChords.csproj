@@ -15,7 +15,7 @@
   <ItemGroup>
     <None Include="BZPlaysFoolChords.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="chords.cfg" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="audio\*.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="audio\**\*.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseGameAssemblies)' == 'true'">
@@ -43,13 +43,13 @@
       <StageDir>$(MSBuildThisFileDirectory)..\..\dist\BZPlaysFoolChords\</StageDir>
     </PropertyGroup>
     <ItemGroup>
-      <StageAudio Include="$(MSBuildThisFileDirectory)audio\*.wav" />
+      <StageAudio Include="$(MSBuildThisFileDirectory)audio\**\*.wav" />
     </ItemGroup>
     <RemoveDir Directories="$(StageDir)" />
-    <MakeDir Directories="$(StageDir)audio" />
+    <MakeDir Directories="$(StageDir)" />
     <Copy SourceFiles="$(TargetPath);$(MSBuildThisFileDirectory)BZPlaysFoolChords.json;$(MSBuildThisFileDirectory)chords.cfg" DestinationFolder="$(StageDir)" />
     <Copy SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(StageDir)" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
-    <Copy SourceFiles="@(StageAudio)" DestinationFolder="$(StageDir)audio" />
+    <Copy SourceFiles="@(StageAudio)" DestinationFiles="@(StageAudio->'$(StageDir)audio\%(RecursiveDir)%(Filename)%(Extension)')" />
     <Message Importance="high" Text="Staged $(AssemblyName) at $(StageDir)" />
   </Target>
 </Project>

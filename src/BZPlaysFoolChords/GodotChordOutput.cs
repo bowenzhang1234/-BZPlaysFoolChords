@@ -41,9 +41,9 @@ sealed class GodotChordOutput
         }
     }
 
-    public bool TryPlay(ChordStep step, float callVolume)
+    public bool TryPlay(InstrumentClip clip, float callVolume)
     {
-        var stream = StreamFor(step);
+        var stream = StreamFor(clip);
         var parent = FindParent();
         if (stream == null || parent == null)
             return false;
@@ -60,7 +60,7 @@ sealed class GodotChordOutput
             return false;
 
         playerType.GetProperty("Stream")?.SetValue(player, stream);
-        playerType.GetProperty("Name")?.SetValue(player, "FoolChord_" + step.Label);
+        playerType.GetProperty("Name")?.SetValue(player, "FoolChord_" + clip.Label);
         if (!GodotRef.AddChild(parent, player))
             return false;
 
@@ -79,25 +79,22 @@ sealed class GodotChordOutput
         return true;
     }
 
-    object? StreamFor(ChordStep step)
+    object? StreamFor(InstrumentClip clip)
     {
-        var key = step.WavFile + "|" + step.Label + "|" + string.Join(",", step.Notes);
-        if (_streams.TryGetValue(key, out var cached) && GodotRef.IsAlive(cached))
+        if (_streams.TryGetValue(clip.CacheKey, out var cached) && GodotRef.IsAlive(cached))
             return cached;
 
         object? stream = null;
-        if (!string.IsNullOrEmpty(step.WavFile))
+        if (!string.IsNullOrEmpty(clip.WavFile))
         {
-            var path = Path.Combine(_audioDirectory, Path.GetFileName(step.WavFile));
+            var path = Path.Combine(_audioDirectory, clip.InstrumentId, Path.GetFileName(clip.WavFile));
             if (File.Exists(path))
                 stream = GodotRef.LoadWav(path);
         }
 
-        if (stream == null && step.Notes.Length > 0)
-            stream = GodotRef.FromPcm(ChordSynth.Render(step.Notes.Select(NoteMath.Frequency).ToArray()));
-
+        stream ??= GodotRef.FromPcm(clip.Synthesize());
         if (stream != null)
-            _streams[key] = stream;
+            _streams[clip.CacheKey] = stream;
 
         return stream;
     }

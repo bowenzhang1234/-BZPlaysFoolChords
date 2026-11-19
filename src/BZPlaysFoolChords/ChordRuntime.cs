@@ -61,12 +61,14 @@ static class GameTypes
 sealed class ChordSession
 {
     readonly ChordSettings _settings;
+    readonly IInstrument _instrument;
     readonly ProgressionState _state = new();
     readonly GodotChordOutput _output;
 
-    public ChordSession(ChordSettings settings, string audioDirectory)
+    public ChordSession(ChordSettings settings, string audioDirectory, IInstrument instrument)
     {
         _settings = settings;
+        _instrument = instrument;
         _output = new GodotChordOutput(audioDirectory, settings.Volume);
     }
 
@@ -95,15 +97,16 @@ sealed class ChordSession
                 return false;
             case PlayAction.PlayChord:
                 var step = _settings.Steps[decision.ChordIndex];
-                var played = _output.TryPlay(step, callVolume);
+                var clip = _instrument.ClipFor(step, decision.ChordIndex);
+                var played = _output.TryPlay(clip, callVolume);
                 if (!played)
                 {
-                    GameLog.Warn($"Could not play {step.Label}. Leaving the original melody sound in place.");
+                    GameLog.Warn($"Could not play {_instrument.DisplayName} {clip.Label}. Leaving the original melody sound in place.");
                     return true;
                 }
 
                 GameLog.Info(string.Create(CultureInfo.InvariantCulture,
-                    $"Played {step.Label} for {(cardId ?? "a melody card")} ({sfx})."));
+                    $"Played {_instrument.DisplayName} {clip.Label} for {(cardId ?? "a melody card")} ({sfx})."));
                 return !_settings.ReplaceVanilla;
             default:
                 return true;
@@ -138,13 +141,17 @@ static class ChordRuntime
         foreach (var warning in settings.Warnings)
             GameLog.Warn(warning);
 
-        Session = new ChordSession(settings, Path.Combine(directory, "audio"));
+        var instrument = InstrumentCatalog.Create().Resolve(settings.Instrument, out var instrumentWarning);
+        if (instrumentWarning != null)
+            GameLog.Warn(instrumentWarning);
+
+        Session = new ChordSession(settings, Path.Combine(directory, "audio"), instrument);
         var (master, sfx) = ReadSliders();
         Session.ApplySlider(master: true, master);
         Session.ApplySlider(master: false, sfx);
         Patch();
         var cards = settings.CardIds.Count == 0 ? "every melody voice" : string.Join(", ", settings.CardIds);
-        GameLog.Info($"Ready. Mode {settings.Mode}, cards: {cards}, chords: {string.Join(" | ", settings.Steps.Select(step => step.Label))}.");
+        GameLog.Info($"Ready. Instrument {instrument.DisplayName}, mode {settings.Mode}, cards: {cards}, steps: {string.Join(" | ", settings.Steps.Select(step => step.Label))}.");
     }
 
     static void Patch()

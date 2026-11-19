@@ -4,14 +4,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\src\BZPlaysFoolChords\CardIds.cs" Link="CardIds.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\ChordLibrary.cs" Link="ChordLibrary.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\ChordSettings.cs" Link="ChordSettings.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\ChordSynth.cs" Link="ChordSynth.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\MelodyEvents.cs" Link="MelodyEvents.cs" />
-    <Compile Include="..\..\src\BZPlaysFoolChords\PlayDecision.cs" Link="PlayDecision.cs" />
+    <Compile Include="ChordTests.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\*.cs" Exclude="..\..\src\BZPlaysFoolChords\ModEntry.cs;..\..\src\BZPlaysFoolChords\ChordRuntime.cs;..\..\src\BZPlaysFoolChords\GodotChordOutput.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\Instruments\*.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace BZPlaysFoolChords;
 
-public sealed record ChordStep(string Label, string[] Notes, string? WavFile);
+public sealed record ChordStep(string Label, string[] Notes, string? WavFile, bool CustomNotes = false);
 
 public enum ChordMode
 {
@@ -13,6 +13,7 @@ public enum ChordMode
 public sealed class ChordSettings
 {
     public ChordMode Mode { get; init; } = ChordMode.Replace;
+    public string Instrument { get; init; } = "piano";
     public int DebounceMs { get; init; } = 1100;
     public float Volume { get; init; } = 1f;
     public IReadOnlySet<string> CardIds { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -24,6 +25,7 @@ public sealed class ChordSettings
     public static ChordSettings Parse(string text)
     {
         var mode = ChordMode.Replace;
+        var instrument = "piano";
         var debounce = 1100;
         var volume = 1f;
         var cardIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -54,6 +56,9 @@ public sealed class ChordSettings
                         mode = ChordMode.Alongside;
                     else
                         warnings.Add($"Unknown mode '{value}'. Using replace.");
+                    break;
+                case "instrument":
+                    instrument = string.IsNullOrWhiteSpace(value) ? "piano" : value.Trim();
                     break;
                 case "debouncems":
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
@@ -94,6 +99,7 @@ public sealed class ChordSettings
         return new ChordSettings
         {
             Mode = mode,
+            Instrument = instrument,
             DebounceMs = debounce,
             Volume = volume,
             CardIds = cardIds,
@@ -151,6 +157,6 @@ public sealed class ChordSettings
         foreach (var note in notes)
             NoteMath.Frequency(note);
 
-        return new ChordStep(labelText, notes, null);
+        return new ChordStep(labelText, notes, null, CustomNotes: true);
     }
 }

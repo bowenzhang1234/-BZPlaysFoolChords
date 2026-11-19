@@ -47,6 +47,7 @@ public class SettingsTests
 
         Assert.Empty(settings.Warnings);
         Assert.Equal(ChordMode.Replace, settings.Mode);
+        Assert.Equal("piano", settings.Instrument);
         Assert.Empty(settings.CardIds);
         Assert.Equal(1100, settings.DebounceMs);
         Assert.Equal("C|G|Am|F", string.Join('|', settings.Steps.Select(step => step.Label)));
@@ -66,6 +67,7 @@ public class SettingsTests
         Assert.Equal(ChordMode.Alongside, settings.Mode);
         Assert.Equal(["KI_HOP", "WAH_CHO_KI"], settings.CardIds.OrderBy(id => id).ToArray());
         Assert.Equal("Dm", settings.Steps[0].Label);
+        Assert.True(settings.Steps[0].CustomNotes);
         Assert.Equal(["D4", "F4", "A4"], settings.Steps[0].Notes);
         Assert.Null(settings.Steps[0].WavFile);
         Assert.Equal(["Bb3", "D4", "F4"], settings.Steps[1].Notes);
@@ -123,38 +125,132 @@ public class ProgressionTests
     }
 }
 
+public class InstrumentTests
+{
+    [Fact]
+    public void BuiltInVoicesResolveByNameAndANewVoiceNeedsOnlyRegistration()
+    {
+        var registry = InstrumentCatalog.Create();
+        Assert.Equal(["piano", "acoustic", "electric", "jazz", "drums"], registry.All.Select(voice => voice.Id).ToArray());
+
+        Assert.Equal("electric", registry.Resolve("Electric Guitar", out var warning).Id);
+        Assert.Null(warning);
+        Assert.Equal("acoustic", registry.Resolve("guitar", out _).Id);
+        Assert.Equal("jazz", registry.Resolve("rhodes", out _).Id);
+
+        var withBell = new InstrumentRegistry();
+        withBell.Register(new PianoInstrument());
+        withBell.Register(new BellInstrument());
+        var step = ChordSettings.DefaultSteps()[0];
+        var clip = withBell.Resolve("bell", out _).ClipFor(step, 0);
+
+        Assert.Equal("bell", clip.InstrumentId);
+        Assert.Equal("piano", withBell.Resolve("bagpipes", out var fallback).Id);
+        Assert.Contains("bagpipes", fallback);
+    }
+
+    sealed class BellInstrument : IInstrument
+    {
+        public string Id => "bell";
+        public string DisplayName => "Bell";
+        public IEnumerable<string> Aliases => [];
+        public InstrumentClip ClipFor(ChordStep step, int stepIndex) =>
+            PitchedClip.Create(this, step, ["C6"], () => PianoInstrument.Render(["C6"]));
+    }
+}
+
 public class AudioTests
 {
     [Fact]
-    public void MajorTriadContainsItsThreePitches()
+    public void PianoTriadContainsItsThreePitches()
     {
-        var samples = ChordSynth.Render(new[] { "C4", "E4", "G4" }.Select(NoteMath.Frequency).ToArray());
-        var sustain = samples.Skip(SampleAt(0.25)).Take(SampleAt(0.30)).ToArray();
+        var sustain = Sustain(PianoInstrument.Render(["C4", "E4", "G4"]), 0.20, 0.25);
+        AssertPitch(sustain, "C4");
+        AssertPitch(sustain, "E4");
+        AssertPitch(sustain, "G4");
+    }
 
-        var root = Magnitude(sustain, NoteMath.Frequency("C4"));
-        var third = Magnitude(sustain, NoteMath.Frequency("E4"));
-        var fifth = Magnitude(sustain, NoteMath.Frequency("G4"));
-        var offChord = Magnitude(sustain, 300);
+    [Fact]
+    public void JazzVoicingAddsTheSeventhAndNinth()
+    {
+        var jazz = Sustain(JazzRhodesInstrument.Render(JazzRhodesInstrument.Voicing("C")), 0.15, 0.25);
+        var piano = Sustain(PianoInstrument.Render(["C4", "E4", "G4"]), 0.15, 0.25);
 
-        Assert.True(root > offChord * 4, $"C4 {root} should stand above 300 Hz {offChord}");
-        Assert.True(third > offChord * 4, $"E4 {third} should stand above 300 Hz {offChord}");
-        Assert.True(fifth > offChord * 4, $"G4 {fifth} should stand above 300 Hz {offChord}");
+        Assert.True(Magnitude(jazz, NoteMath.Frequency("B4")) > Magnitude(piano, NoteMath.Frequency("B4")) * 3);
+        Assert.True(Magnitude(jazz, NoteMath.Frequency("D5")) > Magnitude(piano, NoteMath.Frequency("D5")) * 3);
+    }
+
+    [Fact]
+    public void InstrumentsDoNotSoundAlike()
+    {
+        var step = ChordSettings.DefaultSteps()[0];
+        var piano = InstrumentCatalog.Create().Resolve("piano", out _).ClipFor(step, 0).Synthesize();
+        var acoustic = InstrumentCatalog.Create().Resolve("acoustic", out _).ClipFor(step, 0).Synthesize();
+        var electric = InstrumentCatalog.Create().Resolve("electric", out _).ClipFor(step, 0).Synthesize();
+        var jazz = InstrumentCatalog.Create().Resolve("jazz", out _).ClipFor(step, 0).Synthesize();
+        var drums = InstrumentCatalog.Create().Resolve("drums", out _).ClipFor(step, 0).Synthesize();
+
+        Assert.True(Difference(piano, acoustic) > 0.08);
+        Assert.True(Difference(acoustic, electric) > 0.05);
+        Assert.True(Difference(piano, jazz) > 0.08);
+        Assert.True(Difference(piano, drums) > 0.15);
+    }
+
+    [Fact]
+    public void DrumPatternsVaryAndTheFillHasACymbal()
+    {
+        var backbeat = DrumKitInstrument.Render(0);
+        var fill = DrumKitInstrument.Render(3);
+        Assert.True(Difference(backbeat, fill) > 0.08);
+
+        var kick = Sustain(backbeat, 0.01, 0.08);
+        var crash = Sustain(fill, 0.68, 0.16);
+        Assert.True(Magnitude(kick, 70) > Magnitude(crash, 70));
+        Assert.True(Magnitude(crash, 3300) > Magnitude(kick, 3300) * 2);
     }
 
     [Fact]
     public void ShippedWavsMatchTheSynth()
     {
         var directory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "BZPlaysFoolChords", "audio"));
-        foreach (var (name, notes) in ChordLibrary.Defaults)
+        var steps = ChordSettings.DefaultSteps();
+        foreach (var instrument in InstrumentCatalog.Create().All)
         {
-            var path = Path.Combine(directory, name + ".wav");
-            var shipped = File.ReadAllBytes(path);
-            var rendered = ChordSynth.RenderWav(notes.Split(','));
-            Assert.Equal(rendered, shipped);
-            var decoded = ChordSynth.DecodeWav(shipped);
-            Assert.Contains(decoded, sample => Math.Abs(sample) > 1000);
-            Assert.Equal(0, decoded[^1]);
+            var count = instrument is DrumKitInstrument ? DrumKitInstrument.Patterns.Length : steps.Count;
+            for (var index = 0; index < count; index++)
+            {
+                var clip = instrument.ClipFor(steps[Math.Min(index, steps.Count - 1)], index);
+                var path = Path.Combine(directory, instrument.Id, clip.WavFile ?? clip.Label + ".wav");
+                var shipped = File.ReadAllBytes(path);
+                Assert.Equal(ChordSynth.EncodeWav(clip.Synthesize()), shipped);
+                var decoded = ChordSynth.DecodeWav(shipped);
+                Assert.Contains(decoded, sample => Math.Abs(sample) > 1000);
+                Assert.Equal(0, decoded[^1]);
+            }
         }
+    }
+
+    static void AssertPitch(short[] samples, string note)
+    {
+        var target = Magnitude(samples, NoteMath.Frequency(note));
+        var offChord = Magnitude(samples, 300);
+        Assert.True(target > offChord * 3, $"{note} {target} should stand above 300 Hz {offChord}");
+    }
+
+    static short[] Sustain(short[] samples, double start, double length) =>
+        samples.Skip(SampleAt(start)).Take(SampleAt(length)).ToArray();
+
+    static double Difference(short[] left, short[] right)
+    {
+        var count = Math.Min(left.Length, right.Length);
+        double sum = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var delta = (left[i] - right[i]) / 32768.0;
+            sum += delta * delta;
+        }
+
+        return Math.Sqrt(sum / count);
     }
 
     static int SampleAt(double seconds) => (int)(ChordSynth.SampleRate * seconds);
