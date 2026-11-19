@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ChordTests.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\*.cs" Exclude="..\..\src\BZPlaysFoolChords\ModEntry.cs;..\..\src\BZPlaysFoolChords\ChordRuntime.cs;..\..\src\BZPlaysFoolChords\GodotChordOutput.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\Instruments\*.cs" />
+    <Compile Include="..\..\src\BZPlaysFoolChords\Mappings\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>

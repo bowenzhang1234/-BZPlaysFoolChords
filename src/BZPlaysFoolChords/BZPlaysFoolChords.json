@@ -1,0 +1,12 @@
+{
+  "id": "BZPlaysFoolChords",
+  "name": "BZ Plays Fool Chords",
+  "author": "bowenzhang1234",
+  "description": "Plays a piano chord, or your own wav/ogg recording, when the Fool sings Wah, Cho, or Ki. Choose per-syllable, per-card, loop, or random in chords.cfg.",
+  "version": "0.1.0",
+  "min_game_version": "0.113.0",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": false
+}
