@@ -166,6 +166,10 @@ dotnet build src\BZPlaysFoolChords\BZPlaysFoolChords.csproj -c Release
 
 The tests cover note tuning, the card-id spelling, the config file, per-syllable, loop, random, and per-card mappings, the sample-folder lookup, and that a newly registered instrument or mapping is what the lookup returns.
 
+## Troubleshooting
+
+On v0.113.1 the mod could log `Ready` and then throw on every melody: `Object of type 'System.String' cannot be converted to type 'Godot.StringName'`. Godot node's `Name`, and calls such as `CallDeferred`, take a `StringName`, and reflection does not apply the implicit conversion from `string`. Playback now constructs a `StringName` or `NodePath` for those parameters. If playback still fails, the error is logged once and the game's own Wah / Cho / Ki voice is left in place instead of the exception repeating on every card.
+
 ## What was not run in the game
 
 This environment cannot launch Slay the Spire 2, so nothing here was confirmed inside a combat. In particular, these are still assumptions taken from the public beta decompilation and from mods that do run on 0.113.1:

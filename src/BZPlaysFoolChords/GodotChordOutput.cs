@@ -41,7 +41,29 @@ sealed class GodotChordOutput
         }
     }
 
+    static int _reportedFailures;
+
     public bool TryPlay(InstrumentClip clip, float callVolume)
+    {
+        try
+        {
+            return Play(clip, callVolume);
+        }
+        catch (Exception error)
+        {
+            if (Interlocked.Increment(ref _reportedFailures) == 1)
+            {
+                var detail = error is TargetInvocationException wrapped && wrapped.InnerException != null
+                    ? wrapped.InnerException.Message
+                    : error.Message;
+                GameLog.Warn("Chord playback failed; keeping the original melody voice. " + detail);
+            }
+
+            return false;
+        }
+    }
+
+    bool Play(InstrumentClip clip, float callVolume)
     {
         var stream = StreamFor(clip);
         var parent = FindParent();
@@ -60,7 +82,7 @@ sealed class GodotChordOutput
             return false;
 
         playerType.GetProperty("Stream")?.SetValue(player, stream);
-        playerType.GetProperty("Name")?.SetValue(player, "FoolChord_" + clip.Label);
+        GodotValues.Set(player, "Name", "FoolChord_" + clip.Label);
         if (!GodotRef.AddChild(parent, player))
             return false;
 
@@ -167,29 +189,10 @@ static class GodotRef
             return null;
         }
 
-        var args = new object?[load.GetParameters().Length];
-        args[0] = path;
-        for (var i = 1; i < args.Length; i++)
-            args[i] = load.GetParameters()[i].HasDefaultValue ? load.GetParameters()[i].DefaultValue : null;
-
-        return load.Invoke(null, args);
+        return load.Invoke(null, GodotValues.AdaptArguments(load.GetParameters(), path));
     }
 
-    public static object? LoadWav(string path)
-    {
-        var wavType = GameTypes.Find("Godot.AudioStreamWav");
-        var load = wavType?.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .FirstOrDefault(method => method.Name == "LoadFromFile");
-        if (load == null)
-            return null;
-
-        var args = new object?[load.GetParameters().Length];
-        args[0] = path;
-        for (var i = 1; i < args.Length; i++)
-            args[i] = load.GetParameters()[i].HasDefaultValue ? load.GetParameters()[i].DefaultValue : null;
-
-        return load.Invoke(null, args);
-    }
+    public static object? LoadWav(string path) => LoadStream(path);
 
     public static object? FromPcm(short[] samples)
     {
@@ -229,17 +232,7 @@ static class GodotRef
         if (add == null)
             return false;
 
-        var parameters = add.GetParameters();
-        var args = new object?[parameters.Length];
-        args[0] = child;
-        for (var i = 1; i < parameters.Length; i++)
-        {
-            args[i] = parameters[i].HasDefaultValue
-                ? parameters[i].DefaultValue
-                : parameters[i].ParameterType.IsValueType ? Activator.CreateInstance(parameters[i].ParameterType) : null;
-        }
-
-        add.Invoke(parent, args);
+        add.Invoke(parent, GodotValues.AdaptArguments(add.GetParameters(), child));
         return true;
     }
 
@@ -264,16 +257,7 @@ static class GodotRef
         if (play == null)
             return false;
 
-        var parameters = play.GetParameters();
-        var args = new object?[parameters.Length];
-        for (var i = 0; i < parameters.Length; i++)
-        {
-            args[i] = parameters[i].HasDefaultValue
-                ? parameters[i].DefaultValue
-                : parameters[i].ParameterType.IsValueType ? Activator.CreateInstance(parameters[i].ParameterType) : null;
-        }
-
-        play.Invoke(player, args);
+        play.Invoke(player, GodotValues.AdaptArguments(play.GetParameters()));
         return true;
     }
 
@@ -304,17 +288,20 @@ static class GodotRef
             return;
         }
 
-        player.GetType().GetMethod("CallDeferred", BindingFlags.Public | BindingFlags.Instance)
-            ?.Invoke(player, ["queue_free"]);
+        var deferred = player.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(method => method.Name == "CallDeferred" && method.GetParameters().Length > 0)
+            .OrderBy(method => method.GetParameters().Length)
+            .FirstOrDefault();
+        deferred?.Invoke(player, GodotValues.AdaptArguments(deferred.GetParameters(), "queue_free"));
     }
 
     static void SetEnum(object target, string propertyName, string name, int fallback)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null || !property.CanWrite)
+        if (property == null || !property.CanWrite || !property.PropertyType.IsEnum)
             return;
 
-        object value = property.PropertyType.IsEnum && Enum.GetNames(property.PropertyType).Contains(name)
+        var value = Enum.GetNames(property.PropertyType).Contains(name)
             ? Enum.Parse(property.PropertyType, name)
             : Enum.ToObject(property.PropertyType, fallback);
         property.SetValue(target, value);
